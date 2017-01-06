@@ -114,8 +114,7 @@ public class InfoAdapter extends FirebaseRecyclerAdapter<InfoObject, InfoAdapter
                     .error(R.drawable.default_pic)
                     .into(author);
             authorName.setText(model.getAuthor());
-            if (!MainActivity.admins.contains(MainActivity.auth.getCurrentUser().getEmail()))
-                delete.setVisibility(View.GONE);
+            delete.setVisibility(MainActivity.isAdmin ? View.VISIBLE : View.GONE);
         }
     }
 }

@@ -11,6 +11,7 @@ import android.support.design.widget.TabLayout;
 import android.support.v4.view.ViewPager;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -23,6 +24,7 @@ import android.widget.Spinner;
 
 import com.afollestad.materialdialogs.DialogAction;
 import com.afollestad.materialdialogs.MaterialDialog;
+import com.dagger.globalinfo.BuildConfig;
 import com.dagger.globalinfo.R;
 import com.dagger.globalinfo.adapter.SectionsPagerAdapter;
 import com.dagger.globalinfo.model.InfoObject;
@@ -39,6 +41,8 @@ import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig;
+import com.google.firebase.remoteconfig.FirebaseRemoteConfigSettings;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -60,14 +64,17 @@ public class MainActivity extends AppCompatActivity {
     public static final String MEETUPS = "meetups";
     public static final String TECHNICAL = "technical";
     public static final String CONTENT = "content";
+    public static final String KEY_ADMINS = "admins";
     private static final int REQUEST_INVITE = 100;
     private static final int RC_SIGN_IN = 123;
     public static FirebaseAuth auth;
     public static DatabaseReference eduDbReference, hackDbReference, meetDbReference, techDbReference, contentDbReference;
     public static ArrayList<String> admins = new ArrayList<>();
+    public static boolean isAdmin = false;
     static boolean calledPersistance = false;
     FirebaseJobDispatcher dispatcher;
     ArrayAdapter<String> arrayAdapter;
+    SectionsPagerAdapter mSectionsPagerAdapter;
     String author;
     FirebaseDatabase firebaseDatabase;
     String category;
@@ -92,7 +99,8 @@ public class MainActivity extends AppCompatActivity {
         ButterKnife.bind(this);
 
         setSupportActionBar(toolbar);
-        SectionsPagerAdapter mSectionsPagerAdapter = new SectionsPagerAdapter(getSupportFragmentManager());
+        mSectionsPagerAdapter = new SectionsPagerAdapter(getSupportFragmentManager());
+
 
         if (!calledPersistance) {
             FirebaseDatabase.getInstance().setPersistenceEnabled(true);
@@ -100,8 +108,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         dispatcher = new FirebaseJobDispatcher(new GooglePlayDriver(this));
-
-        addAdmins("manasbagula@gmail.com", "akashshkl01@gmail.com", "singhalsaurabh95@gmail.com");
 
         firebaseDatabase = FirebaseDatabase.getInstance();
         eduDbReference = firebaseDatabase.getReference().child(EDUCATION);
@@ -117,8 +123,6 @@ public class MainActivity extends AppCompatActivity {
 
         auth = FirebaseAuth.getInstance();
         if (auth.getCurrentUser() != null) {
-            if (admins.contains(auth.getCurrentUser().getEmail()))
-                fab.setVisibility(View.VISIBLE);
             author = auth.getCurrentUser().getDisplayName();
         } else {
             startActivityForResult(
@@ -132,7 +136,11 @@ public class MainActivity extends AppCompatActivity {
                                     new AuthUI.IdpConfig.Builder(AuthUI.TWITTER_PROVIDER).build()))
                             .build(),
                     RC_SIGN_IN);
+            return;
         }
+
+        loadAdmins();
+
         toolbar.setTitle("Welcome, " + author);
         fab.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -143,19 +151,34 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-    public void addAdmins(String... strings) {
-        int i = 0;
-        while (i < strings.length)
-            admins.add(strings[i++]);
+    private void loadAdmins() {
+        final FirebaseRemoteConfig remoteConfig = FirebaseRemoteConfig.getInstance();
+        FirebaseRemoteConfigSettings configSettings = new FirebaseRemoteConfigSettings.Builder()
+                .setDeveloperModeEnabled(BuildConfig.DEBUG)
+                .build();
+        remoteConfig.setConfigSettings(configSettings);
+
+        long cacheExpiration = 3600;
+        if (remoteConfig.getInfo().getConfigSettings().isDeveloperModeEnabled()) {
+            cacheExpiration = 0;
+        }
+        remoteConfig.fetch(cacheExpiration).addOnSuccessListener(new OnSuccessListener<Void>() {
+            @Override
+            public void onSuccess(Void aVoid) {
+                remoteConfig.activateFetched();
+                String admins = remoteConfig.getString(KEY_ADMINS);
+                isAdmin = !TextUtils.isEmpty(admins)
+                        && admins.contains(auth.getCurrentUser().getUid());
+                fab.setVisibility(isAdmin ? View.VISIBLE : View.INVISIBLE);
+                if (mSectionsPagerAdapter != null) {
+
+                    //Redraw everything.
+                    mSectionsPagerAdapter.notifyDataSetChanged();
+                }
+            }
+        });
     }
 
-    public void removeAdmins(String... strings) {
-        int i = 0;
-        while (i < strings.length) {
-            if (admins.contains(strings[i]))
-                admins.remove(strings[i++]);
-        }
-    }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
